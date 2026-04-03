@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/lib/supabase";
 import { Booking } from "@/lib/types";
 import { doRangesOverlap } from "@/lib/dateUtils";
 import toast from "react-hot-toast";
@@ -9,23 +8,19 @@ import toast from "react-hot-toast";
 export function useBookings(weekStart: Date, weekEnd: Date) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const initialLoadDone = useRef(false);
 
   const fetchBookings = useCallback(
     async (showLoading = false) => {
       if (showLoading) setLoading(true);
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*")
-        .gte("start_time", weekStart.toISOString())
-        .lt("start_time", weekEnd.toISOString())
-        .order("start_time");
-
-      if (error) {
+      try {
+        const res = await fetch(
+          `/api/bookings?weekStart=${weekStart.toISOString()}&weekEnd=${weekEnd.toISOString()}`
+        );
+        if (!res.ok) throw new Error("fetch failed");
+        const data: Booking[] = await res.json();
+        setBookings(data);
+      } catch {
         toast.error("Failed to load bookings");
-        console.error(error);
-      } else {
-        setBookings(data ?? []);
       }
       setLoading(false);
     },
@@ -33,7 +28,6 @@ export function useBookings(weekStart: Date, weekEnd: Date) {
   );
 
   useEffect(() => {
-    // Show spinner only on first load or week change
     fetchBookings(true);
   }, [fetchBookings]);
 
@@ -54,48 +48,50 @@ export function useBookings(weekStart: Date, weekEnd: Date) {
       return false;
     }
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        name: booking.name,
-        start_time: booking.start_time.toISOString(),
-        end_time: booking.end_time.toISOString(),
-      })
-      .select()
-      .single();
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: booking.name,
+          start_time: booking.start_time.toISOString(),
+          end_time: booking.end_time.toISOString(),
+        }),
+      });
 
-    if (error) {
-      if (error.code === "23P01") {
+      if (res.status === 409) {
         toast.error("This slot was just booked by someone else. Refreshing...");
-      } else {
-        toast.error(error.message);
+        fetchBookings();
+        return false;
       }
+      if (!res.ok) throw new Error("create failed");
+
+      const data: Booking = await res.json();
+      setBookings((prev) =>
+        [...prev, data].sort(
+          (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+        )
+      );
+      toast.success("Booking created!");
+      return true;
+    } catch {
+      toast.error("Failed to create booking");
       fetchBookings();
       return false;
     }
-
-    // Optimistic: append the new booking locally
-    setBookings((prev) =>
-      [...prev, data].sort(
-        (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-      )
-    );
-    toast.success("Booking created!");
-    return true;
   };
 
   const deleteBooking = async (id: string) => {
-    // Optimistic: remove immediately
     const prev = bookings;
     setBookings((b) => b.filter((x) => x.id !== id));
 
-    const { error } = await supabase.from("bookings").delete().eq("id", id);
-    if (error) {
-      toast.error("Failed to delete booking");
-      console.error(error);
-      setBookings(prev); // revert
-    } else {
+    try {
+      const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
       toast.success("Booking deleted");
+    } catch {
+      toast.error("Failed to delete booking");
+      setBookings(prev);
     }
   };
 
@@ -119,7 +115,6 @@ export function useBookings(weekStart: Date, weekEnd: Date) {
       return false;
     }
 
-    // Optimistic: update locally first
     const prev = bookings;
     setBookings((bs) =>
       bs
@@ -131,29 +126,33 @@ export function useBookings(weekStart: Date, weekEnd: Date) {
         .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     );
 
-    const fields: Record<string, string> = {
-      start_time: start_time.toISOString(),
-      end_time: end_time.toISOString(),
-    };
-    if (name !== undefined) fields.name = name;
+    try {
+      const fields: Record<string, string> = {
+        start_time: start_time.toISOString(),
+        end_time: end_time.toISOString(),
+      };
+      if (name !== undefined) fields.name = name;
 
-    const { error } = await supabase
-      .from("bookings")
-      .update(fields)
-      .eq("id", id);
+      const res = await fetch(`/api/bookings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
 
-    if (error) {
-      if (error.code === "23P01") {
+      if (res.status === 409) {
         toast.error("This slot conflicts with another booking.");
-      } else {
-        toast.error(error.message);
+        setBookings(prev);
+        return false;
       }
-      setBookings(prev); // revert
+      if (!res.ok) throw new Error();
+
+      toast.success("Booking updated!");
+      return true;
+    } catch {
+      toast.error("Failed to update booking");
+      setBookings(prev);
       return false;
     }
-
-    toast.success("Booking updated!");
-    return true;
   };
 
   return { bookings, loading, createBooking, deleteBooking, updateBooking, refetch: fetchBookings };
