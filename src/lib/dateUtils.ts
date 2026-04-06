@@ -88,6 +88,24 @@ export function minutesToTimeSlot(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+export const GRACE_MINUTES = 15;
+
+export function getEarliestBookableMinutes(): number {
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const earliest = nowMin - GRACE_MINUTES;
+  return Math.max(0, Math.floor(earliest / 15) * 15);
+}
+
+export function getMinTimeForDate(date: Date): string | undefined {
+  if (isToday(date)) {
+    // Return one slot before earliest so the <= filter in TimeSlotPicker includes the earliest slot
+    const earliest = getEarliestBookableMinutes();
+    return minutesToTimeSlot(Math.max(0, earliest - 15));
+  }
+  return undefined;
+}
+
 export function doRangesOverlap(
   a: { start: Date; end: Date },
   b: { start: Date; end: Date }

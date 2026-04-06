@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { TimeSlotPicker } from "./TimeSlotPicker";
-import { combineDateAndTime, isPastDay, minutesSinceMidnight, minutesToTimeSlot } from "@/lib/dateUtils";
+import { combineDateAndTime, isPastDay, minutesSinceMidnight, minutesToTimeSlot, getMinTimeForDate, GRACE_MINUTES } from "@/lib/dateUtils";
 import { Booking } from "@/lib/types";
 
 interface BookingModalProps {
@@ -79,6 +79,8 @@ export function BookingModal({
     const end = combineDateAndTime(d, endTime);
     if (end <= start) { setError("end must be after start"); return; }
     if (end.getTime() - start.getTime() > 4 * 60 * 60 * 1000) { setError("4 hour max"); return; }
+    const graceMs = GRACE_MINUTES * 60 * 1000;
+    if (start.getTime() < Date.now() - graceMs) { setError("can't book more than 15 minutes in the past"); return; }
     setSubmitting(true);
 
     let ok: boolean;
@@ -124,7 +126,12 @@ export function BookingModal({
 
       <div className="flex flex-col gap-1">
         <label className="font-mono text-[10px] uppercase tracking-[0.15em] font-bold text-gray-500">Date</label>
-        <select value={dateIndex} onChange={(e) => setDateIndex(Number(e.target.value))} className={inputClass}>
+        <select value={dateIndex} onChange={(e) => {
+          const idx = Number(e.target.value);
+          setDateIndex(idx);
+          const minTime = getMinTimeForDate(weekDays[idx]);
+          if (minTime && startTime && startTime < minTime) { setStartTime(""); setEndTime(""); }
+        }} className={inputClass}>
           {weekDays.map((d, i) => (
             <option key={i} value={i} disabled={isPastDay(d)}>
               {d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
@@ -139,6 +146,7 @@ export function BookingModal({
           label="Start"
           value={startTime}
           onChange={(v) => { setStartTime(v); if (endTime && endTime <= v) setEndTime(""); }}
+          minTime={getMinTimeForDate(weekDays[dateIndex])}
         />
         <TimeSlotPicker
           label="End"
