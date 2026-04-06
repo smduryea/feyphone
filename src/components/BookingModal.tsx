@@ -145,7 +145,19 @@ export function BookingModal({
         <TimeSlotPicker
           label="Start"
           value={startTime}
-          onChange={(v) => { setStartTime(v); if (endTime && endTime <= v) setEndTime(""); }}
+          onChange={(v) => {
+            if (startTime && endTime) {
+              const [sh, sm] = startTime.split(":").map(Number);
+              const [eh, em] = endTime.split(":").map(Number);
+              const duration = (eh * 60 + em) - (sh * 60 + sm);
+              const newEnd = addMinutesToSlot(v, duration);
+              setStartTime(v);
+              setEndTime(newEnd ?? "");
+            } else {
+              setStartTime(v);
+              setEndTime(addMinutesToSlot(v, 30) ?? "");
+            }
+          }}
           minTime={getMinTimeForDate(weekDays[dateIndex])}
         />
         <TimeSlotPicker
