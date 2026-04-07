@@ -8,6 +8,7 @@ import {
   isPastDay,
   minutesToTimeSlot,
   minutesSinceMidnight,
+  getEarliestBookableMinutes,
 } from "@/lib/dateUtils";
 import { BookingBlock, HOUR_HEIGHT } from "./BookingBlock";
 
@@ -87,6 +88,7 @@ export function DayColumn({
       if (touchMovedRef.current) return;
       if ((e.target as HTMLElement).closest("[data-booking]")) return;
       const minutes = getMinutesFromClientY(e.clientY);
+      if (isToday(date) && minutes < getEarliestBookableMinutes()) return;
       onTimeRangeSelect(date, minutesToTimeSlot(minutes), minutesToTimeSlot(Math.min(minutes + 60, 24 * 60)));
     },
     [isMobile, past, date, getMinutesFromClientY, onTimeRangeSelect]
@@ -125,6 +127,7 @@ export function DayColumn({
       // Selection drag (stays local)
       e.preventDefault();
       const m = getMinutesFromClientY(e.clientY);
+      if (isToday(date) && m < getEarliestBookableMinutes()) return;
       setSelectDragging(true);
       setDragStartMin(m);
       setDragCurrentMin(m);
@@ -176,7 +179,8 @@ export function DayColumn({
     const onUp = (e: MouseEvent) => {
       setSelectDragging(false);
       const end = clamp(getMinutesFromClientY(e.clientY));
-      const s = Math.min(dragStartRef.current, end), en = Math.max(dragStartRef.current, end);
+      let s = Math.min(dragStartRef.current, end), en = Math.max(dragStartRef.current, end);
+      if (isToday(date)) s = Math.max(s, getEarliestBookableMinutes());
       const fe = en === s ? Math.min(s + 15, 24 * 60) : en;
       const ss = minutesToTimeSlot(s), es = minutesToTimeSlot(fe);
       if (ss !== es) onTimeRangeSelect(date, ss, es);
