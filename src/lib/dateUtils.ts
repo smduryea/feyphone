@@ -32,7 +32,7 @@ export function generateTimeSlots(): string[] {
 
 export function formatTime(isoString: string): string {
   const date = new Date(isoString);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 export function formatDateShort(date: Date): string {

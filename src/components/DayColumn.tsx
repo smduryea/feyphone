@@ -34,10 +34,7 @@ function yToMinutes(y: number): number {
 }
 
 function formatSlotLabel(slot: string): string {
-  const [h, m] = slot.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+  return slot;
 }
 
 function CurrentTimeLine() {
@@ -230,8 +227,8 @@ export function DayColumn({
             className="absolute left-0 right-0 border-b border-gray-200"
             style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
           >
-            <span className={`absolute top-1/2 -translate-y-1/2 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
-              {hour === 0 ? "12A" : hour < 12 ? `${hour}A` : hour === 12 ? "12P" : `${hour - 12}P`}
+            <span className={`absolute top-0 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
+              {String(hour).padStart(2, "0")}:00
             </span>
           </div>
         ))}
@@ -240,7 +237,7 @@ export function DayColumn({
 
         {selectDragging && (
           <div
-            className="absolute left-0.5 right-0.5 border-2 border-dashed border-gray-900 bg-lime-200/50 pointer-events-none z-10"
+            className="absolute left-0.5 right-0.5 border-2 border-dashed border-gray-900 bg-lime-200/90 pointer-events-none z-10"
             style={{ top: `${selTopPx}px`, height: `${selHPx}px` }}
           >
             <span className="absolute top-0.5 left-1.5 font-mono text-[10px] font-bold text-gray-900">
