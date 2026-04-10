@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { Booking } from "@/lib/types";
 import {
   isSameDay,
@@ -11,6 +11,11 @@ import {
   getEarliestBookableMinutes,
 } from "@/lib/dateUtils";
 import { BookingBlock, HOUR_HEIGHT } from "./BookingBlock";
+import SunCalc from "suncalc";
+
+// Paris coordinates
+const PARIS_LAT = 48.8566;
+const PARIS_LNG = 2.3522;
 
 interface DayColumnProps {
   date: Date;
@@ -70,6 +75,14 @@ export function DayColumn({
   const dayBookings = bookings.filter((b) => isSameDay(new Date(b.start_time), date));
   const today = isToday(date);
   const past = isPastDay(date);
+
+  const { sunriseHour, sunsetHour } = useMemo(() => {
+    const times = SunCalc.getTimes(date, PARIS_LAT, PARIS_LNG);
+    return {
+      sunriseHour: times.sunrise.getHours(),
+      sunsetHour: times.sunset.getHours(),
+    };
+  }, [date]);
   const timelineRef = useRef<HTMLDivElement>(null);
   const touchMovedRef = useRef(false);
 
@@ -221,17 +234,43 @@ export function DayColumn({
         onTouchStart={isMobile ? () => { touchMovedRef.current = false; } : undefined}
         onTouchMove={isMobile ? () => { touchMovedRef.current = true; } : undefined}
       >
-        {HOURS.map((hour) => (
-          <div
-            key={hour}
-            className="absolute left-0 right-0 border-b border-gray-200"
-            style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
-          >
-            <span className={`absolute top-0 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
-              {String(hour).padStart(2, "0")}:00
-            </span>
-          </div>
-        ))}
+        {HOURS.map((hour) => {
+          const isSunrise = hour === sunriseHour;
+          const isSunset = hour === sunsetHour;
+          const distFromSunrise = hour - sunriseHour;
+          const distFromSunset = hour - sunsetHour;
+
+          let bgClass = "";
+          if (distFromSunrise === -1) {
+            bgClass = "bg-gradient-to-b from-indigo-50/40 to-amber-100/40";
+          } else if (isSunrise) {
+            bgClass = "bg-gradient-to-b from-amber-100/50 to-amber-50/30";
+          } else if (distFromSunrise === 1) {
+            bgClass = "bg-amber-50/20";
+          } else if (distFromSunset === -1) {
+            bgClass = "bg-gradient-to-b from-amber-50/20 to-orange-50/30";
+          } else if (isSunset) {
+            bgClass = "bg-gradient-to-b from-orange-50/40 to-indigo-50/40";
+          } else if (distFromSunset === 1) {
+            bgClass = "bg-indigo-50/40";
+          } else if (hour > sunriseHour && hour < sunsetHour) {
+            bgClass = "bg-amber-50/15";
+          } else {
+            bgClass = "bg-indigo-50/40";
+          }
+
+          return (
+            <div
+              key={hour}
+              className={`absolute left-0 right-0 border-b border-gray-200 ${bgClass}`}
+              style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+            >
+              <span className={`absolute top-0 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
+                {String(hour).padStart(2, "0")}:00{isSunrise ? " ☀" : isSunset ? " ☽" : ""}
+              </span>
+            </div>
+          );
+        })}
 
         {today && !past && <CurrentTimeLine />}
 
