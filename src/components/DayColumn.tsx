@@ -28,9 +28,12 @@ interface DayColumnProps {
   draggingBookingId?: string | null;
   isMobile?: boolean;
   hideHeader?: boolean;
+  nightExpanded?: boolean;
+  onToggleNight?: () => void;
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const DAY_HOURS = [...Array.from({ length: 18 }, (_, i) => i + 6), 0]; // 6am-11pm + midnight (always visible)
+const NIGHT_HOURS = [1, 2, 3, 4, 5]; // 1am - 5am (collapsible, at bottom)
 const QUARTER_HEIGHT = HOUR_HEIGHT / 4;
 const MAX_DURATION_MIN = 4 * 60;
 
@@ -42,14 +45,15 @@ function formatSlotLabel(slot: string): string {
   return slot;
 }
 
-function CurrentTimeLine() {
+function CurrentTimeLine({ getHourTop }: { getHourTop: (hour: number) => number }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(id);
   }, []);
-  const min = now.getHours() * 60 + now.getMinutes();
-  const top = (min / 60) * HOUR_HEIGHT;
+  const hour = now.getHours();
+  const frac = now.getMinutes() / 60;
+  const top = getHourTop(hour) + frac * HOUR_HEIGHT;
   return (
     <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: `${top}px` }}>
       <div className="flex items-center">
@@ -71,6 +75,8 @@ export function DayColumn({
   draggingBookingId,
   isMobile,
   hideHeader,
+  nightExpanded = false,
+  onToggleNight,
 }: DayColumnProps) {
   const dayBookings = bookings.filter((b) => isSameDay(new Date(b.start_time), date));
   const today = isToday(date);
@@ -207,6 +213,62 @@ export function DayColumn({
 
   const weekday = date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
   const dayNum = date.getDate();
+  const nightBookings = dayBookings.filter((b) => {
+    const h = new Date(b.start_time).getHours();
+    return h >= 1 && h < 6;
+  });
+  const NIGHT_COLLAPSED_HEIGHT = 28;
+  // DAY_HOURS has 18 items (7-23 + 0), NIGHT_HOURS has 6 (1-6)
+  const totalHeight = nightExpanded
+    ? DAY_HOURS.length * HOUR_HEIGHT + NIGHT_HOURS.length * HOUR_HEIGHT
+    : DAY_HOURS.length * HOUR_HEIGHT + NIGHT_COLLAPSED_HEIGHT;
+
+  // Layout: 6,7,...23,0 (always visible), then 1-5 (collapsible)
+  const getHourTop = (hour: number) => {
+    if (hour >= 6) {
+      // 6am-11pm: position 0-17
+      return (hour - 6) * HOUR_HEIGHT;
+    }
+    if (hour === 0) {
+      // Midnight: right after 11pm (position 18)
+      return 18 * HOUR_HEIGHT;
+    }
+    // 1am-5am: after midnight (position 19+)
+    if (nightExpanded) {
+      return DAY_HOURS.length * HOUR_HEIGHT + (hour - 1) * HOUR_HEIGHT;
+    }
+    // Collapsed
+    return DAY_HOURS.length * HOUR_HEIGHT + ((hour - 1) / 5) * NIGHT_COLLAPSED_HEIGHT;
+  };
+
+  const renderHourSlot = (hour: number) => {
+    const label = `${String(hour).padStart(2, "0")}:00`;
+    const isSunrise = hour === sunriseHour;
+    const isSunset = hour === sunsetHour;
+    const distFromSunrise = hour - sunriseHour;
+    const distFromSunset = hour - sunsetHour;
+    let bgClass = "";
+    if (distFromSunrise === -1) bgClass = "bg-gradient-to-b from-indigo-50/40 to-amber-100/40";
+    else if (isSunrise) bgClass = "bg-gradient-to-b from-amber-100/50 to-amber-50/30";
+    else if (distFromSunrise === 1) bgClass = "bg-amber-50/20";
+    else if (distFromSunset === -1) bgClass = "bg-gradient-to-b from-amber-50/20 to-orange-50/30";
+    else if (isSunset) bgClass = "bg-gradient-to-b from-orange-50/40 to-indigo-50/40";
+    else if (distFromSunset === 1) bgClass = "bg-indigo-50/40";
+    else if (hour > sunriseHour && hour < sunsetHour) bgClass = "bg-amber-50/15";
+    else bgClass = "bg-indigo-50/40";
+
+    return (
+      <div
+        key={hour}
+        className={`absolute left-0 right-0 border-b border-gray-200 ${bgClass}`}
+        style={{ top: `${getHourTop(hour)}px`, height: `${HOUR_HEIGHT}px` }}
+      >
+        <span className={`absolute top-0 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
+          {label}{isSunrise ? " ☀" : isSunset ? " ☽" : ""}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className={`flex flex-col ${isMobile ? "" : "min-w-[120px]"} ${past ? "opacity-30" : ""}`} data-day-column data-day-date={date.toISOString()}>
@@ -228,51 +290,59 @@ export function DayColumn({
         ref={timelineRef}
         data-timeline
         className={`relative ${past ? "stripes cursor-not-allowed" : isMobile ? "bg-white" : "select-none cursor-crosshair bg-white"}`}
-        style={{ height: `${24 * HOUR_HEIGHT}px` }}
+        style={{ height: `${totalHeight}px` }}
         onMouseDown={isMobile ? undefined : handleMouseDown}
         onClick={isMobile ? handleMobileTap : undefined}
         onTouchStart={isMobile ? () => { touchMovedRef.current = false; } : undefined}
         onTouchMove={isMobile ? () => { touchMovedRef.current = true; } : undefined}
       >
-        {HOURS.map((hour) => {
-          const isSunrise = hour === sunriseHour;
-          const isSunset = hour === sunsetHour;
-          const distFromSunrise = hour - sunriseHour;
-          const distFromSunset = hour - sunsetHour;
+        {/* Day hours first (7am-11pm + midnight) */}
+        {DAY_HOURS.map(renderHourSlot)}
 
-          let bgClass = "";
-          if (distFromSunrise === -1) {
-            bgClass = "bg-gradient-to-b from-indigo-50/40 to-amber-100/40";
-          } else if (isSunrise) {
-            bgClass = "bg-gradient-to-b from-amber-100/50 to-amber-50/30";
-          } else if (distFromSunrise === 1) {
-            bgClass = "bg-amber-50/20";
-          } else if (distFromSunset === -1) {
-            bgClass = "bg-gradient-to-b from-amber-50/20 to-orange-50/30";
-          } else if (isSunset) {
-            bgClass = "bg-gradient-to-b from-orange-50/40 to-indigo-50/40";
-          } else if (distFromSunset === 1) {
-            bgClass = "bg-indigo-50/40";
-          } else if (hour > sunriseHour && hour < sunsetHour) {
-            bgClass = "bg-amber-50/15";
-          } else {
-            bgClass = "bg-indigo-50/40";
-          }
-
-          return (
-            <div
-              key={hour}
-              className={`absolute left-0 right-0 border-b border-gray-200 ${bgClass}`}
-              style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+        {/* Night hours at bottom: collapsed crack or expanded */}
+        {nightExpanded ? (
+          <>
+            {NIGHT_HOURS.map(renderHourSlot)}
+            <button
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleNight?.(); }}
+              className="absolute left-0 right-0 z-30 flex items-center justify-center bg-gray-100 border-y border-gray-300 hover:bg-gray-200 transition-colors"
+              style={{ top: `${DAY_HOURS.length * HOUR_HEIGHT}px`, height: '18px' }}
+              title="Collapse night hours"
             >
-              <span className={`absolute top-0 font-mono font-bold select-none text-gray-500 ${hour % 6 === 0 ? "text-[11px]" : "text-[10px]"} ${isMobile ? "left-2" : "left-1"}`}>
-                {String(hour).padStart(2, "0")}:00{isSunrise ? " ☀" : isSunset ? " ☽" : ""}
-              </span>
+              <span className="text-[9px] font-mono text-gray-400 hover:text-gray-600">▼ collapse 1AM–5AM ▼</span>
+            </button>
+          </>
+        ) : (
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleNight?.(); }}
+            className="absolute left-0 right-0 z-30 overflow-hidden cursor-pointer group"
+            style={{ top: `${DAY_HOURS.length * HOUR_HEIGHT}px`, height: `${NIGHT_COLLAPSED_HEIGHT}px` }}
+            title={`12 AM – 7 AM${nightBookings.length ? ` (${nightBookings.length} booking${nightBookings.length > 1 ? 's' : ''})` : ''}`}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-gray-100 via-gray-50 to-gray-100 border-y border-gray-300">
+              <svg className="absolute inset-0 w-full h-full opacity-30 group-hover:opacity-50 transition-opacity" preserveAspectRatio="none" viewBox="0 0 200 30">
+                <path d="M0,15 L25,12 L35,18 L50,8 L65,16 L80,11 L95,20 L110,13 L125,17 L140,9 L155,19 L170,14 L185,16 L200,15" stroke="#888" strokeWidth="0.8" fill="none"/>
+                <path d="M30,18 L40,22 L45,25" stroke="#999" strokeWidth="0.5" fill="none"/>
+                <path d="M90,11 L95,5 L100,8" stroke="#999" strokeWidth="0.5" fill="none"/>
+                <path d="M150,19 L158,24 L162,22" stroke="#999" strokeWidth="0.5" fill="none"/>
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center gap-1.5">
+                <span className="font-mono text-[9px] text-gray-400 group-hover:text-gray-600 tracking-wider transition-colors">
+                  1AM–5AM
+                </span>
+                {nightBookings.length > 0 && (
+                  <span className="bg-gray-900 text-white text-[8px] font-mono font-bold px-1.5 py-0.5 leading-none">
+                    {nightBookings.length}
+                  </span>
+                )}
+              </div>
             </div>
-          );
-        })}
+          </button>
+        )}
 
-        {today && !past && <CurrentTimeLine />}
+        {today && !past && <CurrentTimeLine getHourTop={getHourTop} />}
 
         {selectDragging && (
           <div
@@ -285,18 +355,34 @@ export function DayColumn({
           </div>
         )}
 
-        {dayBookings.map((booking) => (
-          <BookingBlock
-            key={booking.id}
-            booking={booking}
-            colorMap={colorMap}
-            onDelete={onDelete}
-            onEdit={onEditBooking}
-            isMobile={isMobile}
-            isDragging={false}
-            isHidden={draggingBookingId === booking.id}
-          />
-        ))}
+        {dayBookings.map((booking) => {
+          const sMin = minutesSinceMidnight(booking.start_time);
+          const eMin = minutesSinceMidnight(booking.end_time);
+          const startHour = Math.floor(sMin / 60);
+          const startFrac = (sMin % 60) / 60;
+          const bTop = getHourTop(startHour) + startFrac * HOUR_HEIGHT;
+          const endHour = Math.floor(eMin / 60);
+          const endFrac = (eMin % 60) / 60;
+          const bBot = getHourTop(endHour) + endFrac * HOUR_HEIGHT;
+          const bHeight = Math.max(bBot - bTop, 24);
+          // Hide bookings in collapsed night zone
+          const inNight = startHour >= 1 && startHour < 6;
+          if (inNight && !nightExpanded) return null;
+          return (
+            <BookingBlock
+              key={booking.id}
+              booking={booking}
+              colorMap={colorMap}
+              onDelete={onDelete}
+              onEdit={onEditBooking}
+              isMobile={isMobile}
+              isDragging={false}
+              isHidden={draggingBookingId === booking.id}
+              topOverride={bTop}
+              heightOverride={bHeight}
+            />
+          );
+        })}
       </div>
     </div>
   );

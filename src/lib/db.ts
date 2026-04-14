@@ -6,32 +6,26 @@ import { join } from "path";
 const DB_PATH = join(process.cwd(), "bookings.db");
 
 let db: any = null;
-let initPromise: Promise<void> | null = null;
+let SQL: any = null;
 
 async function getDb() {
-  if (db) return db;
-  if (!initPromise) {
-    initPromise = (async () => {
-      const SQL = await initSqlJs();
-      if (existsSync(DB_PATH)) {
-        const buffer = readFileSync(DB_PATH);
-        db = new SQL.Database(buffer);
-      } else {
-        db = new SQL.Database();
-      }
-      db.run(`
-        CREATE TABLE IF NOT EXISTS bookings (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          start_time TEXT NOT NULL,
-          end_time TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `);
-      save();
-    })();
+  // Reload from disk every time to stay in sync with MCP server
+  if (!SQL) SQL = await initSqlJs();
+  if (existsSync(DB_PATH)) {
+    db = new SQL.Database(readFileSync(DB_PATH));
+  } else {
+    db = new SQL.Database();
+    db.run(`
+      CREATE TABLE IF NOT EXISTS bookings (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    save();
   }
-  await initPromise;
   return db;
 }
 

@@ -54,6 +54,10 @@ export function WeekGrid({
   const tabsRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
+  // Night hours expand/collapse (shared across all columns)
+  const [nightExpanded, setNightExpanded] = useState(false);
+  const toggleNight = useCallback(() => setNightExpanded(prev => !prev), []);
+
   // Cross-day move drag state
   const [moveState, setMoveState] = useState<MoveState | null>(null);
   const moveRef = useRef<MoveState | null>(null);
@@ -246,6 +250,8 @@ export function WeekGrid({
             onBookingDragStart={noopDragStart}
             isMobile
             hideHeader
+            nightExpanded={nightExpanded}
+            onToggleNight={toggleNight}
           />
         </div>
       </div>
@@ -267,6 +273,8 @@ export function WeekGrid({
             onEditBooking={onEditBooking}
             onBookingDragStart={handleBookingDragStart}
             draggingBookingId={moveState?.bookingId}
+            nightExpanded={nightExpanded}
+            onToggleNight={toggleNight}
           />
         ))}
       </div>

@@ -14,15 +14,17 @@ interface BookingBlockProps {
   isHidden?: boolean;
   dragTopPx?: number;
   dragLabel?: string;
+  topOverride?: number;
+  heightOverride?: number;
 }
 
 const HOUR_HEIGHT = 48;
 
-export function BookingBlock({ booking, colorMap, onDelete, onEdit, isMobile, isDragging, isHidden, dragTopPx, dragLabel }: BookingBlockProps) {
+export function BookingBlock({ booking, colorMap, onDelete, onEdit, isMobile, isDragging, isHidden, dragTopPx, dragLabel, topOverride, heightOverride }: BookingBlockProps) {
   const startMin = minutesSinceMidnight(booking.start_time);
   const endMin = minutesSinceMidnight(booking.end_time);
-  const naturalTop = (startMin / 60) * HOUR_HEIGHT;
-  const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 24);
+  const naturalTop = topOverride !== undefined ? topOverride : (startMin / 60) * HOUR_HEIGHT;
+  const height = heightOverride !== undefined ? heightOverride : Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 24);
   const top = isDragging && dragTopPx !== undefined ? dragTopPx : naturalTop;
   const color = getBookingColor(booking.name, colorMap);
 
