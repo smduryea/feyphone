@@ -65,6 +65,20 @@ export function BookingModal({
     setError("");
   }, [isOpen, editingBooking, selectedDate, initialStartTime, initialEndTime, weekDays]);
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const maxEndTime = startTime ? addMinutesToSlot(startTime, 4 * 60) : undefined;

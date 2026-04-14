@@ -62,6 +62,41 @@ export function WeekGrid({
   const [moveState, setMoveState] = useState<MoveState | null>(null);
   const moveRef = useRef<MoveState | null>(null);
 
+  // Constants for collapsed night hours (same as DayColumn)
+  const DAY_HOURS_LENGTH = 19; // 6am-11pm + midnight
+  const NIGHT_COLLAPSED_HEIGHT = 28;
+
+  // Convert Y position to minutes accounting for collapsed hours
+  const getMinutesFromY = useCallback((y: number): number => {
+    const dayHoursEnd = 18 * HOUR_HEIGHT; // End of hours 6-23
+    const midnightEnd = 19 * HOUR_HEIGHT; // End of midnight hour
+    const nightStart = DAY_HOURS_LENGTH * HOUR_HEIGHT;
+
+    if (y < dayHoursEnd) {
+      // In day hours (6am-11pm)
+      const hour = 6 + Math.floor(y / HOUR_HEIGHT);
+      const minutesIntoHour = ((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60;
+      return hour * 60 + minutesIntoHour;
+    } else if (y < midnightEnd) {
+      // In midnight hour
+      const minutesIntoHour = ((y - dayHoursEnd) / HOUR_HEIGHT) * 60;
+      return minutesIntoHour; // 0:00 - 0:59
+    } else {
+      // In night hours (1am-5am)
+      const yInNight = y - nightStart;
+      if (nightExpanded) {
+        const hour = 1 + Math.floor(yInNight / HOUR_HEIGHT);
+        const minutesIntoHour = ((yInNight % HOUR_HEIGHT) / HOUR_HEIGHT) * 60;
+        return Math.min(hour * 60 + minutesIntoHour, 6 * 60); // Cap at 6am
+      } else {
+        // Collapsed: map the small region to 1am-5am
+        const fraction = Math.min(yInNight / NIGHT_COLLAPSED_HEIGHT, 1);
+        const totalNightMinutes = 5 * 60; // 1am-6am = 5 hours
+        return 60 + fraction * totalNightMinutes; // Start at 1am (60 min)
+      }
+    }
+  }, [nightExpanded]);
+
   useEffect(() => { setSelectedDayIndex(0); }, [weekStart]);
 
   useEffect(() => {
@@ -104,7 +139,7 @@ export function WeekGrid({
         if (clientX >= rect.left && clientX < rect.right) {
           dayIndex = i;
           const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
-          minutes = Math.round(((y / HOUR_HEIGHT) * 60) / 15) * 15;
+          minutes = Math.round(getMinutesFromY(y) / 15) * 15;
           break;
         }
       }
@@ -121,13 +156,13 @@ export function WeekGrid({
         if (dayIndex >= 0) {
           const rect = columns[dayIndex].getBoundingClientRect();
           const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
-          minutes = Math.round(((y / HOUR_HEIGHT) * 60) / 15) * 15;
+          minutes = Math.round(getMinutesFromY(y) / 15) * 15;
         }
       }
 
       return dayIndex >= 0 ? { dayIndex, minutes } : null;
     },
-    []
+    [getMinutesFromY]
   );
 
   // Window mousemove/mouseup for cross-day dragging

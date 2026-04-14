@@ -92,11 +92,69 @@ export function DayColumn({
   const timelineRef = useRef<HTMLDivElement>(null);
   const touchMovedRef = useRef(false);
 
+  const NIGHT_COLLAPSED_HEIGHT = 28;
+
+  // Convert minutes (0-1440) to Y position accounting for collapsed hours
+  const getMinutesToY = useCallback((minutes: number): number => {
+    const hour = Math.floor(minutes / 60);
+    const minutesIntoHour = minutes % 60;
+    const fraction = minutesIntoHour / 60;
+
+    if (hour >= 6 || hour === 0) {
+      // Day hours (6am-11pm) or midnight
+      const baseY = hour >= 6 ? (hour - 6) * HOUR_HEIGHT : 18 * HOUR_HEIGHT;
+      return baseY + fraction * HOUR_HEIGHT;
+    } else {
+      // Night hours (1am-5am)
+      const nightStart = DAY_HOURS.length * HOUR_HEIGHT;
+      if (nightExpanded) {
+        return nightStart + (hour - 1) * HOUR_HEIGHT + fraction * HOUR_HEIGHT;
+      } else {
+        // Collapsed: map to the small region
+        const nightFraction = ((hour - 1) + fraction) / 5;
+        return nightStart + nightFraction * NIGHT_COLLAPSED_HEIGHT;
+      }
+    }
+  }, [nightExpanded]);
+
+  // Inverse of getMinutesToY: convert Y position to minutes
+  const getMinutesFromY = useCallback((y: number): number => {
+    const dayHoursEnd = 18 * HOUR_HEIGHT; // End of hours 6-23
+    const midnightEnd = 19 * HOUR_HEIGHT; // End of midnight hour
+    const nightStart = DAY_HOURS.length * HOUR_HEIGHT;
+
+    if (y < dayHoursEnd) {
+      // In day hours (6am-11pm)
+      const hour = 6 + Math.floor(y / HOUR_HEIGHT);
+      const minutesIntoHour = ((y % HOUR_HEIGHT) / HOUR_HEIGHT) * 60;
+      return hour * 60 + minutesIntoHour;
+    } else if (y < midnightEnd) {
+      // In midnight hour
+      const minutesIntoHour = ((y - dayHoursEnd) / HOUR_HEIGHT) * 60;
+      return minutesIntoHour; // 0:00 - 0:59
+    } else {
+      // In night hours (1am-5am)
+      const yInNight = y - nightStart;
+      if (nightExpanded) {
+        const hour = 1 + Math.floor(yInNight / HOUR_HEIGHT);
+        const minutesIntoHour = ((yInNight % HOUR_HEIGHT) / HOUR_HEIGHT) * 60;
+        return Math.min(hour * 60 + minutesIntoHour, 6 * 60); // Cap at 6am
+      } else {
+        // Collapsed: map the small region to 1am-5am
+        const fraction = Math.min(yInNight / NIGHT_COLLAPSED_HEIGHT, 1);
+        const totalNightMinutes = 5 * 60; // 1am-6am = 5 hours
+        return 60 + fraction * totalNightMinutes; // Start at 1am (60 min)
+      }
+    }
+  }, [nightExpanded]);
+
   const getMinutesFromClientY = useCallback((clientY: number) => {
     if (!timelineRef.current) return 0;
     const rect = timelineRef.current.getBoundingClientRect();
-    return yToMinutes(Math.max(0, Math.min(clientY - rect.top, rect.height)));
-  }, []);
+    const y = Math.max(0, Math.min(clientY - rect.top, rect.height));
+    const minutes = getMinutesFromY(y);
+    return Math.round(minutes / 15) * 15; // Snap to 15-minute intervals
+  }, [getMinutesFromY]);
 
   const handleMobileTap = useCallback(
     (e: React.MouseEvent) => {
@@ -208,8 +266,9 @@ export function DayColumn({
 
   const selTop = Math.min(dragStartMin, dragCurrentMin);
   const selBot = Math.max(dragStartMin, dragCurrentMin);
-  const selTopPx = (selTop / 60) * HOUR_HEIGHT;
-  const selHPx = Math.max(((selBot - selTop) / 60) * HOUR_HEIGHT, QUARTER_HEIGHT);
+  const selTopPx = getMinutesToY(selTop);
+  const selBotPx = getMinutesToY(selBot);
+  const selHPx = Math.max(selBotPx - selTopPx, QUARTER_HEIGHT);
 
   const weekday = date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
   const dayNum = date.getDate();
@@ -217,7 +276,6 @@ export function DayColumn({
     const h = new Date(b.start_time).getHours();
     return h >= 1 && h < 6;
   });
-  const NIGHT_COLLAPSED_HEIGHT = 28;
   // DAY_HOURS has 18 items (7-23 + 0), NIGHT_HOURS has 6 (1-6)
   const totalHeight = nightExpanded
     ? DAY_HOURS.length * HOUR_HEIGHT + NIGHT_HOURS.length * HOUR_HEIGHT
