@@ -65,17 +65,21 @@ function BookingModalInner({
   );
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const isEditing = !!editingBooking;
 
-  // Escape key to close
+  // Escape: dismiss confirm panel first, then close modal
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (confirmingDelete) setConfirmingDelete(false);
+        else onClose();
+      }
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
+  }, [onClose, confirmingDelete]);
 
   const maxEndTime = startTime ? addMinutesToSlot(startTime, 4 * 60) : undefined;
 
@@ -106,16 +110,44 @@ function BookingModalInner({
 
   const handleDelete = () => {
     if (!editingBooking) return;
-    if (window.confirm(`Delete ${editingBooking.name}'s booking?`)) {
-      onDelete(editingBooking.id);
-      onClose();
-    }
+    onDelete(editingBooking.id);
+    onClose();
   };
 
   const title = isEditing ? "Edit Booking" : "Make Booking";
   const submitLabel = isEditing
     ? submitting ? "saving..." : "Save Changes"
     : submitting ? "booking..." : "Make Booking";
+
+  const confirmPanel = editingBooking && (
+    <div className="flex flex-col gap-5">
+      <div className="border-2 border-red-500 bg-red-50 px-4 py-4">
+        <p className="font-mono text-[10px] uppercase tracking-[0.15em] font-bold text-red-500 mb-1">Confirm delete</p>
+        <p className="font-mono text-sm font-bold text-gray-900">
+          Remove <span className="text-red-700">{editingBooking.name}</span>&apos;s booking?
+        </p>
+        <p className="font-mono text-xs text-gray-500 mt-1">
+          {minutesToTimeSlot(minutesSinceMidnight(editingBooking.start_time))} – {minutesToTimeSlot(minutesSinceMidnight(editingBooking.end_time))}
+        </p>
+      </div>
+      <div className={`flex gap-2 ${isMobile ? "flex-col-reverse" : ""}`}>
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(false)}
+          className={`border-2 border-gray-900 px-5 py-3 font-mono text-sm font-bold uppercase tracking-wider hover:bg-gray-100 transition-colors active:translate-y-0.5 ${isMobile ? "w-full" : ""}`}
+        >
+          Keep it
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className={`border-2 border-red-500 bg-red-500 text-white px-5 py-3 font-mono text-sm font-bold uppercase tracking-wider hover:bg-red-600 hover:border-red-600 transition-colors active:translate-y-0.5 ${isMobile ? "w-full" : "flex-1"}`}
+        >
+          Yes, delete
+        </button>
+      </div>
+    </div>
+  );
 
   const inputClass =
     "border-2 border-gray-900 bg-white px-4 py-3 text-base font-mono focus:bg-lime-50 focus:outline-none transition-colors placeholder:text-gray-300";
@@ -204,7 +236,7 @@ function BookingModalInner({
         {isEditing && (
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setConfirmingDelete(true)}
             className={`border-2 border-red-500 text-red-700 px-5 py-3 font-mono text-sm font-bold uppercase tracking-wider hover:bg-red-50 transition-colors active:translate-y-0.5 ${isMobile ? "w-full" : ""}`}
           >
             Delete
@@ -241,7 +273,7 @@ function BookingModalInner({
         >
           <div className="mx-auto mb-4 h-1 w-12 bg-gray-300" />
           <h3 className="text-2xl font-black tracking-tight text-gray-900 mb-5">{title}</h3>
-          {formContent}
+          {confirmingDelete ? confirmPanel : formContent}
         </div>
       </div>
     );
@@ -266,7 +298,7 @@ function BookingModalInner({
             &times;
           </button>
         </div>
-        {formContent}
+        {confirmingDelete ? confirmPanel : formContent}
       </div>
     </div>
   );
