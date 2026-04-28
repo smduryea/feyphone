@@ -26,60 +26,56 @@ function addMinutesToSlot(slot: string, minutes: number): string | null {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function BookingModal({
-  isOpen, onClose, onSubmit, onEdit, onDelete, editingBooking, selectedDate, initialStartTime, initialEndTime, weekDays, isMobile,
+// Outer: gates rendering so inner always mounts fresh via key
+export function BookingModal(props: BookingModalProps) {
+  if (!props.isOpen) return null;
+  const key = props.editingBooking?.id
+    ?? `new-${props.selectedDate?.toISOString() ?? ""}-${props.initialStartTime ?? ""}`;
+  return <BookingModalInner key={key} {...props} />;
+}
+
+function BookingModalInner({
+  onClose, onSubmit, onEdit, onDelete, editingBooking, selectedDate, initialStartTime, initialEndTime, weekDays, isMobile,
 }: BookingModalProps) {
-  const [name, setName] = useState("");
-  const [dateIndex, setDateIndex] = useState(0);
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const initialDateIndex = (() => {
+    if (editingBooking) {
+      const bookingDate = new Date(editingBooking.start_time);
+      const idx = weekDays.findIndex((d) => d.toDateString() === bookingDate.toDateString());
+      return idx >= 0 ? idx : 0;
+    }
+    if (selectedDate) {
+      const idx = weekDays.findIndex((d) => d.toDateString() === selectedDate.toDateString());
+      return idx >= 0 ? idx : 0;
+    }
+    const first = weekDays.findIndex((d) => !isPastDay(d));
+    return first >= 0 ? first : 0;
+  })();
+
+  const [name, setName] = useState(editingBooking?.name ?? "");
+  const [dateIndex, setDateIndex] = useState(initialDateIndex);
+  const [startTime, setStartTime] = useState(
+    editingBooking
+      ? minutesToTimeSlot(minutesSinceMidnight(editingBooking.start_time))
+      : (initialStartTime ?? "")
+  );
+  const [endTime, setEndTime] = useState(
+    editingBooking
+      ? minutesToTimeSlot(minutesSinceMidnight(editingBooking.end_time))
+      : (initialEndTime ?? "")
+  );
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const isEditing = !!editingBooking;
 
+  // Escape key to close
   useEffect(() => {
-    if (!isOpen) return;
-
-    if (editingBooking) {
-      // Edit mode: pre-fill from existing booking
-      const bookingDate = new Date(editingBooking.start_time);
-      const idx = weekDays.findIndex((d) => d.toDateString() === bookingDate.toDateString());
-      if (idx >= 0) setDateIndex(idx);
-      setName(editingBooking.name);
-      setStartTime(minutesToTimeSlot(minutesSinceMidnight(editingBooking.start_time)));
-      setEndTime(minutesToTimeSlot(minutesSinceMidnight(editingBooking.end_time)));
-    } else {
-      // Create mode
-      if (selectedDate) {
-        const idx = weekDays.findIndex((d) => d.toDateString() === selectedDate.toDateString());
-        if (idx >= 0) setDateIndex(idx);
-      } else {
-        const first = weekDays.findIndex((d) => !isPastDay(d));
-        setDateIndex(first >= 0 ? first : 0);
-      }
-      setName("");
-      setStartTime(initialStartTime ?? "");
-      setEndTime(initialEndTime ?? "");
-    }
-    setError("");
-  }, [isOpen, editingBooking, selectedDate, initialStartTime, initialEndTime, weekDays]);
-
-  // Handle Escape key to close modal
-  useEffect(() => {
-    if (!isOpen) return;
-
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
+      if (e.key === "Escape") onClose();
     };
-
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  }, [onClose]);
 
   const maxEndTime = startTime ? addMinutesToSlot(startTime, 4 * 60) : undefined;
 
@@ -205,7 +201,6 @@ export function BookingModal({
       )}
 
       <div className={`flex gap-2 mt-2 ${isMobile ? "flex-col-reverse" : isEditing ? "justify-between" : "justify-end"}`}>
-        {/* Left side: delete button in edit mode only */}
         {isEditing && (
           <button
             type="button"
@@ -216,7 +211,6 @@ export function BookingModal({
           </button>
         )}
 
-        {/* Right side: cancel + submit */}
         <div className={`flex gap-2 ${isMobile ? "flex-col-reverse w-full" : ""}`}>
           <button
             type="button"

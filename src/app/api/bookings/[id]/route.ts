@@ -1,29 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { deleteBooking, updateBooking } from "@/lib/db";
+import { withErrorHandler } from "@/lib/apiHandler";
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  await deleteBooking(id);
-  return NextResponse.json({ ok: true });
-}
+type RouteContext = { params: Promise<{ id: string }> };
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  const body = await request.json();
+export const DELETE = withErrorHandler(
+	"api:bookings:DELETE",
+	async (_request: NextRequest, { params }: RouteContext) => {
+		const { id } = await params;
+		await deleteBooking(id);
+		return NextResponse.json({ ok: true });
+	},
+);
 
-  try {
-    await updateBooking(id, body);
-    return NextResponse.json({ ok: true });
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message === "OVERLAP") {
-      return NextResponse.json({ error: "This slot conflicts with another booking" }, { status: 409 });
-    }
-    return NextResponse.json({ error: "Failed to update booking" }, { status: 500 });
-  }
-}
+export const PATCH = withErrorHandler(
+	"api:bookings:PATCH",
+	async (request: NextRequest, { params }: RouteContext) => {
+		const { id } = await params;
+		const body = await request.json();
+		await updateBooking(id, body);
+		return NextResponse.json({ ok: true });
+	},
+	{
+		OVERLAP: {
+			status: 409,
+			message: "This slot conflicts with another booking",
+		},
+	},
+);

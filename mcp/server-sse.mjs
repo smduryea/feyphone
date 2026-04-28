@@ -65,9 +65,6 @@ function formatBooking(b) {
 function getCETOffset(dateStr) {
   // Use JS to figure out the offset for a given date
   const d = new Date(dateStr + 'T12:00:00Z');
-  const jan = new Date(d.getFullYear(), 0, 1);
-  const jul = new Date(d.getFullYear(), 6, 1);
-  const stdOffset = Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
   // For Europe/Paris: CET=+01:00, CEST=+02:00
   // Simple DST check: last Sunday of March to last Sunday of October
   const month = d.getUTCMonth();

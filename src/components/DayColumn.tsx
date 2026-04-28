@@ -37,10 +37,6 @@ const NIGHT_HOURS = [1, 2, 3, 4, 5]; // 1am - 5am (collapsible, at bottom)
 const QUARTER_HEIGHT = HOUR_HEIGHT / 4;
 const MAX_DURATION_MIN = 4 * 60;
 
-function yToMinutes(y: number): number {
-  return Math.round(((y / HOUR_HEIGHT) * 60) / 15) * 15;
-}
-
 function formatSlotLabel(slot: string): string {
   return slot;
 }
@@ -207,7 +203,7 @@ export function DayColumn({
       setDragCurrentMin(m);
       dragStartRef.current = m;
     },
-    [isMobile, past, getMinutesFromClientY, dayBookings]
+    [isMobile, past, getMinutesFromClientY, dayBookings, date]
   );
 
   // Pending booking: detect click vs drag
@@ -253,7 +249,8 @@ export function DayColumn({
     const onUp = (e: MouseEvent) => {
       setSelectDragging(false);
       const end = clamp(getMinutesFromClientY(e.clientY));
-      let s = Math.min(dragStartRef.current, end), en = Math.max(dragStartRef.current, end);
+      let s = Math.min(dragStartRef.current, end);
+      const en = Math.max(dragStartRef.current, end);
       if (isToday(date)) s = Math.max(s, getEarliestBookableMinutes());
       const fe = en === s ? Math.min(s + 15, 24 * 60) : en;
       const ss = minutesToTimeSlot(s), es = minutesToTimeSlot(fe);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Booking } from "@/lib/types";
 import {
   getDaysOfWeek,
@@ -50,7 +50,10 @@ export function WeekGrid({
   isMobile,
 }: WeekGridProps) {
   const days = getDaysOfWeek(weekStart);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  // Store weekStart alongside index so we can derive 0 when weekStart changes without an effect
+  const [tabState, setTabState] = useState({ weekStart, index: 0 });
+  const selectedDayIndex = tabState.weekStart === weekStart ? tabState.index : 0;
+  const setSelectedDayIndex = (i: number) => setTabState({ weekStart, index: i });
   const tabsRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +64,9 @@ export function WeekGrid({
   // Cross-day move drag state
   const [moveState, setMoveState] = useState<MoveState | null>(null);
   const moveRef = useRef<MoveState | null>(null);
+
+  // Ghost block column geometry — measured in event handlers, not during render
+  const [ghostGeom, setGhostGeom] = useState<{ left: number; width: number; offsetTop: number } | null>(null);
 
   // Constants for collapsed night hours (same as DayColumn)
   const DAY_HOURS_LENGTH = 19; // 6am-11pm + midnight
@@ -97,13 +103,25 @@ export function WeekGrid({
     }
   }, [nightExpanded]);
 
-  useEffect(() => { setSelectedDayIndex(0); }, [weekStart]);
-
   useEffect(() => {
     if (!isMobile || !tabsRef.current) return;
     const tab = tabsRef.current.children[selectedDayIndex] as HTMLElement;
     if (tab) tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [selectedDayIndex, isMobile]);
+
+  const measureColumn = useCallback((dayIndex: number) => {
+    if (!gridRef.current) return;
+    const columns = gridRef.current.querySelectorAll("[data-timeline]");
+    const col = columns[dayIndex] as HTMLElement | undefined;
+    if (!col) return;
+    const gridRect = gridRef.current.getBoundingClientRect();
+    const colRect = col.getBoundingClientRect();
+    setGhostGeom({
+      left: colRect.left - gridRect.left + gridRef.current.scrollLeft,
+      width: colRect.width,
+      offsetTop: col.offsetTop,
+    });
+  }, []);
 
   // Called by DayColumn when a booking drag starts
   const handleBookingDragStart = useCallback(
@@ -122,8 +140,9 @@ export function WeekGrid({
       };
       setMoveState(state);
       moveRef.current = state;
+      measureColumn(state.currentDayIndex);
     },
-    [bookings, days]
+    [bookings, days, measureColumn]
   );
 
   // Resolve cursor position to dayIndex + minutes
@@ -180,6 +199,7 @@ export function WeekGrid({
       const updated = { ...ref, currentDayIndex: pos.dayIndex, currentTopMin: topMin };
       moveRef.current = updated;
       setMoveState(updated);
+      measureColumn(pos.dayIndex);
     };
 
     const onUp = (e: MouseEvent) => {
@@ -188,6 +208,7 @@ export function WeekGrid({
       const pos = resolvePosition(e.clientX, e.clientY);
 
       setMoveState(null);
+      setGhostGeom(null);
       moveRef.current = null;
 
       if (!pos) return;
@@ -209,19 +230,18 @@ export function WeekGrid({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [moveState, days, resolvePosition, onMoveBooking]);
+  }, [moveState, days, resolvePosition, onMoveBooking, measureColumn]);
 
-  // Ghost block rendering info
-  const ghostInfo = moveState
-    ? (() => {
-        const color = getBookingColor(moveState.booking.name, colorMap);
-        const topPx = (moveState.currentTopMin / 60) * HOUR_HEIGHT;
-        const heightPx = Math.max((moveState.durationMin / 60) * HOUR_HEIGHT, 24);
-        const startLabel = formatSlotLabel(minutesToTimeSlot(moveState.currentTopMin));
-        const endLabel = formatSlotLabel(minutesToTimeSlot(moveState.currentTopMin + moveState.durationMin));
-        return { color, topPx, heightPx, startLabel, endLabel, dayIndex: moveState.currentDayIndex, name: moveState.booking.name };
-      })()
-    : null;
+  // Ghost block rendering info — pure data, no DOM access
+  const ghostInfo = useMemo(() => {
+    if (!moveState) return null;
+    const color = getBookingColor(moveState.booking.name, colorMap);
+    const topPx = (moveState.currentTopMin / 60) * HOUR_HEIGHT;
+    const heightPx = Math.max((moveState.durationMin / 60) * HOUR_HEIGHT, 24);
+    const startLabel = formatSlotLabel(minutesToTimeSlot(moveState.currentTopMin));
+    const endLabel = formatSlotLabel(minutesToTimeSlot(moveState.currentTopMin + moveState.durationMin));
+    return { color, topPx, heightPx, startLabel, endLabel, dayIndex: moveState.currentDayIndex, name: moveState.booking.name };
+  }, [moveState, colorMap]);
 
   // No-op for mobile drag start
   const noopDragStart = useCallback(() => {}, []);
@@ -297,7 +317,7 @@ export function WeekGrid({
   return (
     <div className="border-2 border-gray-900 bg-white overflow-x-auto overflow-y-hidden scrollbar-none relative" ref={gridRef}>
       <div className="grid grid-cols-7 divide-x-2 divide-gray-900 min-w-[840px]">
-        {days.map((date, i) => (
+        {days.map((date) => (
           <DayColumn
             key={date.toISOString()}
             date={date}
@@ -314,35 +334,25 @@ export function WeekGrid({
         ))}
       </div>
 
-      {/* Ghost booking block overlay */}
-      {ghostInfo && gridRef.current && (() => {
-        const columns = gridRef.current!.querySelectorAll("[data-timeline]");
-        const col = columns[ghostInfo.dayIndex] as HTMLElement | undefined;
-        if (!col) return null;
-        const gridRect = gridRef.current!.getBoundingClientRect();
-        const colRect = col.getBoundingClientRect();
-        const left = colRect.left - gridRect.left + gridRef.current!.scrollLeft;
-        const width = colRect.width;
-
-        return (
-          <div
-            className={`absolute border-l-4 px-2.5 py-1 overflow-hidden z-50 pointer-events-none ${ghostInfo.color.bg} ${ghostInfo.color.border} ${ghostInfo.color.text} ring-2 ${ghostInfo.color.ring} -rotate-1 scale-[1.03]`}
-            style={{
-              top: `${ghostInfo.topPx + col.offsetTop}px`,
-              left: `${left + 6}px`,
-              width: `${width - 10}px`,
-              height: `${ghostInfo.heightPx}px`,
-            }}
-          >
-            <div className="font-bold text-xs truncate leading-tight">{ghostInfo.name}</div>
-            {ghostInfo.heightPx >= 36 && (
-              <div className={`${ghostInfo.color.sub} font-mono text-[10px] mt-0.5`}>
-                {ghostInfo.startLabel} – {ghostInfo.endLabel}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* Ghost booking block overlay — position comes from ghostGeom state, measured in event handlers */}
+      {ghostInfo && ghostGeom && (
+        <div
+          className={`absolute border-l-4 px-2.5 py-1 overflow-hidden z-50 pointer-events-none ${ghostInfo.color.bg} ${ghostInfo.color.border} ${ghostInfo.color.text} ring-2 ${ghostInfo.color.ring} -rotate-1 scale-[1.03]`}
+          style={{
+            top: `${ghostInfo.topPx + ghostGeom.offsetTop}px`,
+            left: `${ghostGeom.left + 6}px`,
+            width: `${ghostGeom.width - 10}px`,
+            height: `${ghostInfo.heightPx}px`,
+          }}
+        >
+          <div className="font-bold text-xs truncate leading-tight">{ghostInfo.name}</div>
+          {ghostInfo.heightPx >= 36 && (
+            <div className={`${ghostInfo.color.sub} font-mono text-[10px] mt-0.5`}>
+              {ghostInfo.startLabel} – {ghostInfo.endLabel}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
